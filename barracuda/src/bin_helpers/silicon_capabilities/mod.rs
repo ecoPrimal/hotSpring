@@ -1,5 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+
+/// # Silicon Capabilities Probe
+///
+/// Probes GPU compute capabilities for double-float (df64) arithmetic:
+/// FMA support, workgroup reductions, storage precision, and pipeline
+/// correctness. Each probe runs a small compute shader and validates
+/// results against CPU reference implementations.
+///
+/// ## Probe Functions
+/// - `probe_f32_fma` — Fused multiply-add detection
+/// - `probe_f32_workgroup_reduce` — f32 parallel sum
+/// - `probe_df64_storage_arith` — df64 basic operations
+/// - `probe_df64_workgroup_reduce_f32` — df64 reduce (f32-backed)
+/// - `probe_df64_workgroup_reduce_f64` — df64 reduce (f64-backed)
+/// - `probe_reduce_pipeline` — full reduction pipeline
 //! Helpers extracted from `validate_silicon_capabilities`: wgpu boilerplate, probes, reporting.
 
 use barracuda::pipeline::ReduceScalarPipeline;
@@ -127,6 +142,13 @@ pub fn check_print(
     harness.check_abs(&label, got, expected, tol);
 }
 
+
+// ── f32 Fused Multiply-Add ─────────────────────────────────────────────
+/// Probe whether the GPU supports f32 fused multiply-add (FMA).
+///
+/// Uses the two_prod pattern: a*b decomposed via FMA to detect
+/// whether the hardware actually fuses or splits into mul+add.
+/// Correct FMA gives exact error term; split gives nonzero residual.
 pub async fn probe_f32_fma(gpu: &GpuF64, tag: &str, harness: &mut ValidationHarness) {
     println!("── f32 FMA (two_prod pattern) ──");
     let device = gpu.device();
@@ -227,6 +249,12 @@ pub async fn probe_f32_fma(gpu: &GpuF64, tag: &str, harness: &mut ValidationHarn
     println!();
 }
 
+
+// ── f32 Workgroup Reduce ────────────────────────────────────────────────
+/// Probe f32 workgroup reduction (parallel sum across threads).
+///
+/// Tests whether subgroup operations preserve f32 precision during
+/// tree-reduction. Compares GPU sum against Kahan-compensated CPU sum.
 pub async fn probe_f32_workgroup_reduce(gpu: &GpuF64, tag: &str, harness: &mut ValidationHarness) {
     println!("── f32 workgroup reduction (barrier baseline) ──");
     let device = gpu.device();
@@ -330,6 +358,12 @@ pub async fn probe_f32_workgroup_reduce(gpu: &GpuF64, tag: &str, harness: &mut V
     println!();
 }
 
+
+// ── df64 Storage Arithmetic ─────────────────────────────────────────────
+/// Probe double-float (df64) storage and basic arithmetic.
+///
+/// Tests hi+lo pair storage, addition, multiplication, and
+/// Newton-Raphson reciprocal in df64 representation on the GPU.
 pub async fn probe_df64_storage_arith(gpu: &GpuF64, tag: &str, harness: &mut ValidationHarness) {
     println!("── DF64 storage arithmetic (no workgroup memory) ──");
     let device = gpu.device();
@@ -432,6 +466,12 @@ pub async fn probe_df64_storage_arith(gpu: &GpuF64, tag: &str, harness: &mut Val
     println!();
 }
 
+
+// ── df64 Workgroup Reduce (f32 backing) ─────────────────────────────────
+/// Probe df64 reduction backed by f32 storage.
+///
+/// The hard case: reducing df64 values across a workgroup where each
+/// thread holds a (hi, lo) pair. Tests associativity preservation.
 pub async fn probe_df64_workgroup_reduce_f32(
     gpu: &GpuF64,
     tag: &str,
@@ -541,6 +581,13 @@ pub async fn probe_df64_workgroup_reduce_f32(
     println!();
 }
 
+
+// ── df64 Workgroup Reduce (f64 backing) ─────────────────────────────────
+/// Probe df64 reduction backed by f64 storage (if available).
+///
+/// Verifies that f64-backed storage gives better precision than
+/// f32-backed during parallel reduction. May fail on GPUs without
+/// f64 shader support (expected — records as unsupported).
 pub async fn probe_df64_workgroup_reduce_f64(
     gpu: &GpuF64,
     tag: &str,
@@ -655,6 +702,12 @@ pub async fn probe_df64_workgroup_reduce_f64(
     clippy::unused_async,
     reason = "async signature required by dispatch framework"
 )]
+
+// ── Full Reduce Pipeline ────────────────────────────────────────────────
+/// End-to-end reduction pipeline probe.
+///
+/// Runs a complete GPU reduction with multi-pass tree structure,
+/// testing the full pipeline from dispatch through readback.
 pub async fn probe_reduce_pipeline(gpu: &GpuF64, tag: &str, harness: &mut ValidationHarness) {
     println!("── ReduceScalarPipeline end-to-end (production path) ──");
 
@@ -739,6 +792,12 @@ pub async fn probe_reduce_pipeline(gpu: &GpuF64, tag: &str, harness: &mut Valida
     println!();
 }
 
+
+// ── Harness → Measurements ──────────────────────────────────────────────
+/// Convert validation harness results into structured measurements.
+///
+/// Transforms pass/fail checks into measurement records for
+/// downstream reporting and comparison across GPU hardware.
 pub fn harness_to_measurements(
     harness: &ValidationHarness,
     ts: u64,

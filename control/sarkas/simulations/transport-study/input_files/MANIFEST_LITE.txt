@@ -1,3 +1,0 @@
-transport_k1_G50_lite.yaml
-transport_k2_G100_lite.yaml
-transport_k3_G100_lite.yaml
